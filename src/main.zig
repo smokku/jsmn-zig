@@ -1,10 +1,326 @@
 const std = @import("std");
 const testing = std.testing;
 
-export fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
+/// JSON type identifier. Basic types are:
+///  * Object
+///  * Array
+///  * String
+///  * Other primitive: number, boolean (true/false) or null
+const Type = enum(u8) {
+    UNDEFINED = 0,
+    OBJECT = 1 << 0,
+    ARRAY = 1 << 1,
+    STRING = 1 << 2,
+    PRIMITIVE = 1 << 3,
+};
 
-test "basic add functionality" {
-    try testing.expect(add(3, 7) == 10);
+const Error = error{
+    /// Not enough tokens were provided
+    NOMEM,
+    /// Invalid character inside JSON string
+    INVAL,
+    /// The string is not a full JSON packet, more bytes expected
+    PART,
+};
+
+/// JSON token description.
+/// type	type (object, array, string etc.)
+/// start	start position in JSON data string
+/// end		end position in JSON data string
+const Token = struct {
+    typ: Type,
+    start: isize,
+    end: isize,
+    size: usize,
+    parent: isize,
+
+    /// Fills token type and boundaries.
+    fn fill(token: *Token, typ: Type, start: isize, end: isize) void {
+        token.typ = typ;
+        token.start = start;
+        token.end = end;
+        token.size = 0;
+    }
+};
+
+/// JSON parser. Contains an array of token blocks available. Also stores
+/// the string being parsed now and current position in that string.
+const Parser = struct {
+    strict: bool,
+
+    pos: isize,
+    toknext: isize,
+    toksuper: isize,
+
+    fn init(parser: *Parser) void {
+        parser.pos = 0;
+        parser.toknext = 0;
+        parser.toksuper = -1;
+    }
+
+    /// Parse JSON string and fill tokens.
+    fn parse(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!usize {
+        var count = @bitCast(usize, parser.toknext);
+
+        while (parser.pos < js.len and js[@bitCast(usize, parser.pos)] != 0) : (parser.pos += 1) {
+            const c = js[@bitCast(usize, parser.pos)];
+            switch (c) {
+                '{', '[' => {
+                    count += 1;
+                    if (tokens == null) {
+                        continue;
+                    }
+                    const token = try parser.allocToken(tokens.?);
+                    if (parser.toksuper != -1) {
+                        const t = &tokens.?[@bitCast(usize, parser.toksuper)];
+                        if (parser.strict) {
+                            // In strict mode an object or array can't become a key
+                            if (t.typ == .OBJECT) {
+                                return Error.INVAL;
+                            }
+                        }
+
+                        t.size += 1;
+                        token.parent = parser.toksuper;
+                    }
+                    token.typ = if (c == '{') .OBJECT else .ARRAY;
+                    token.start = parser.pos;
+                    parser.toksuper = parser.toknext - 1;
+                },
+                '}', ']' => {
+                    if (tokens == null) {
+                        continue;
+                    }
+                    const typ: Type = if (c == '}') .OBJECT else .ARRAY;
+                    if (parser.toknext < 1) {
+                        return Error.INVAL;
+                    }
+                    var token = &tokens.?[@bitCast(usize, parser.toknext - 1)];
+                    while (true) {
+                        if (token.start != -1 and token.end == -1) {
+                            if (token.typ != typ) {
+                                return Error.INVAL;
+                            }
+                            token.end = parser.pos + 1;
+                            parser.toksuper = token.parent;
+                            break;
+                        }
+                        if (token.parent == -1) {
+                            if (token.typ != typ or parser.toksuper == -1) {
+                                return Error.INVAL;
+                            }
+                            break;
+                        }
+                        token = &tokens.?[@bitCast(usize, token.parent)];
+                    }
+                },
+                '"' => {
+                    const r = try parser.parseString(js, tokens);
+                    if (r < 0) {
+                        return r;
+                    }
+                    count += 1;
+                    if (parser.toksuper != -1 and tokens != null) {
+                        tokens.?[@bitCast(usize, parser.toksuper)].size += 1;
+                    }
+                },
+                '\t', '\r', '\n', ' ' => {},
+                ':' => {
+                    parser.toksuper = parser.toknext - 1;
+                },
+                ',' => {
+                    if (tokens != null and parser.toksuper != -1 and
+                        tokens.?[@bitCast(usize, parser.toksuper)].typ != .ARRAY and
+                        tokens.?[@bitCast(usize, parser.toksuper)].typ != .OBJECT)
+                    {
+                        parser.toksuper = tokens.?[@bitCast(usize, parser.toksuper)].parent;
+                    }
+                },
+                '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 't', 'f', 'n' => {
+                    // In strict mode primitives are: numbers and booleans
+                    if (parser.strict) {
+                        // And they must not be keys of the object
+                        if (tokens != null and parser.toksuper != -1) {
+                            const t = &tokens.?[@bitCast(usize, parser.toksuper)];
+                            if (t.typ == .OBJECT or
+                                (t.typ == .STRING and t.size != 0))
+                            {
+                                return Error.INVAL;
+                            }
+                        }
+                    } else {
+                        const r = try parser.parsePrimitive(js, tokens);
+                        if (r < 0) {
+                            return r;
+                        }
+                        count += 1;
+                        if (parser.toksuper != -1 and tokens != null) {
+                            tokens.?[@bitCast(usize, parser.toksuper)].size += 1;
+                        }
+                    }
+                },
+                else => {
+                    if (parser.strict) {
+                        // Unexpected char in strict mode
+                        return Error.INVAL;
+                    } else {
+                        const r = try parser.parsePrimitive(js, tokens);
+                        if (r < 0) {
+                            return r;
+                        }
+                        count += 1;
+                        if (parser.toksuper != -1 and tokens != null) {
+                            tokens.?[@bitCast(usize, parser.toksuper)].size += 1;
+                        }
+                    }
+                },
+            }
+        }
+
+        if (tokens != null) {
+            var i = parser.toknext - 1;
+            while (i >= 0) : (i -= 1) {
+                // Unmatched opened object or array
+                if (tokens.?[@bitCast(usize, i)].start != -1 and tokens.?[@bitCast(usize, i)].end == -1) {
+                    return Error.PART;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// Fills next available token with JSON primitive.
+    fn parsePrimitive(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!usize {
+        const start = parser.pos;
+
+        found: {
+            while (parser.pos < js.len and js[@bitCast(usize, parser.pos)] != 0) : (parser.pos += 1) {
+                switch (js[@bitCast(usize, parser.pos)]) {
+                    ':' => {
+                        // In strict mode primitive must be followed by "," or "}" or "]"
+                        if (parser.strict) break :found;
+                    },
+                    '\t', '\r', '\n', ' ', ',', ']', '}' => {
+                        break :found;
+                    },
+                    else => {
+                        // quiet pass
+                    },
+                }
+                if (js[@bitCast(usize, parser.pos)] < 32 or js[@bitCast(usize, parser.pos)] >= 127) {
+                    parser.pos = start;
+                    return Error.INVAL;
+                }
+            }
+            if (parser.strict) {
+                // In strict mode primitive must be followed by a comma/object/array
+                parser.pos = start;
+                return Error.PART;
+            }
+        }
+
+        if (tokens == null) {
+            parser.pos -= 1;
+            return 0;
+        }
+        const token = parser.allocToken(tokens.?) catch {
+            parser.pos = start;
+            return Error.NOMEM;
+        };
+        token.fill(.PRIMITIVE, start, parser.pos);
+        token.parent = parser.toksuper;
+        parser.pos -= 1;
+        return 0;
+    }
+
+    /// Fills next token with JSON string.
+    fn parseString(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!usize {
+        const start = parser.pos;
+
+        // Skip starting quote
+        parser.pos += 1;
+
+        while (parser.pos < js.len and js[@bitCast(usize, parser.pos)] != 0) : (parser.pos += 1) {
+            const c = js[@bitCast(usize, parser.pos)];
+
+            // Quote: end of string
+            if (c == '\"') {
+                if (tokens == null) {
+                    return 0;
+                }
+                const token = parser.allocToken(tokens.?) catch {
+                    parser.pos = start;
+                    return Error.NOMEM;
+                };
+                token.fill(.STRING, start + 1, parser.pos);
+                token.parent = parser.toksuper;
+                return 0;
+            }
+
+            // Backslash: Quoted symbol expected
+            if (c == '\\' and parser.pos + 1 < js.len) {
+                parser.pos += 1;
+                switch (js[@bitCast(usize, parser.pos)]) {
+                    // Allowed escaped symbols
+                    '\"', '/', '\\', 'b', 'f', 'r', 'n', 't' => {},
+                    // Allows escaped symbol \uXXXX
+                    'u' => {
+                        parser.pos += 1;
+                        var i: usize = 0;
+                        while (i < 4 and parser.pos < js.len and js[@bitCast(usize, parser.pos)] != 0) : (i += 1) {
+                            // If it isn't a hex character we have an error
+                            if (!((js[@bitCast(usize, parser.pos)] >= 48 and js[@bitCast(usize, parser.pos)] <= 57) or // 0-9
+                                (js[@bitCast(usize, parser.pos)] >= 65 and js[@bitCast(usize, parser.pos)] <= 70) or // A-F
+                                (js[@bitCast(usize, parser.pos)] >= 97 and js[@bitCast(usize, parser.pos)] <= 102)))
+                            { // a-f
+                                parser.pos = start;
+                                return Error.INVAL;
+                            }
+                            parser.pos += 1;
+                        }
+                        parser.pos -= 1;
+                    },
+                    // Unexpected symbol
+                    else => {
+                        parser.pos = start;
+                        return Error.INVAL;
+                    },
+                }
+            }
+        }
+        parser.pos = start;
+        return Error.PART;
+    }
+
+    /// Allocates a fresh unused token from the token pool.
+    fn allocToken(parser: *Parser, tokens: []Token) Error!*Token {
+        if (parser.toknext >= tokens.len) {
+            return Error.NOMEM;
+        }
+
+        parser.toknext += 1;
+        const tok = &tokens[@bitCast(usize, parser.toknext)];
+        tok.start = -1;
+        tok.end = -1;
+        tok.size = 0;
+        tok.parent = -1;
+        return tok;
+    }
+};
+
+test "basic object" {
+    var t: [128]Token = undefined;
+    var p: Parser = undefined;
+    const json =
+        \\{ "name" : "Jack", "age" : 27 }
+    ;
+
+    p.init();
+    const r1 = try p.parse(json, null);
+    try testing.expectEqual(r1, 5);
+
+    p.init();
+    const r2 = try p.parse(json, &t);
+    try testing.expectEqual(r2, 5);
 }
