@@ -148,15 +148,11 @@ pub const Parser = struct {
                                 return Error.INVAL;
                             }
                         }
-                    } else {
-                        const r = try parser.parsePrimitive(js, tokens);
-                        if (r < 0) {
-                            return r;
-                        }
-                        count += 1;
-                        if (parser.toksuper != -1 and tokens != null) {
-                            tokens.?[@intCast(usize, parser.toksuper)].size += 1;
-                        }
+                    }
+                    try parser.parsePrimitive(js, tokens);
+                    count += 1;
+                    if (parser.toksuper != -1 and tokens != null) {
+                        tokens.?[@intCast(usize, parser.toksuper)].size += 1;
                     }
                 },
                 else => {
@@ -164,10 +160,7 @@ pub const Parser = struct {
                         // Unexpected char in strict mode
                         return Error.INVAL;
                     } else {
-                        const r = try parser.parsePrimitive(js, tokens);
-                        if (r < 0) {
-                            return r;
-                        }
+                        try parser.parsePrimitive(js, tokens);
                         count += 1;
                         if (parser.toksuper != -1 and tokens != null) {
                             tokens.?[@intCast(usize, parser.toksuper)].size += 1;
@@ -191,7 +184,7 @@ pub const Parser = struct {
     }
 
     /// Fills next available token with JSON primitive.
-    fn parsePrimitive(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!usize {
+    fn parsePrimitive(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!void {
         const start = parser.pos;
 
         found: {
@@ -199,7 +192,7 @@ pub const Parser = struct {
                 switch (js[@intCast(usize, parser.pos)]) {
                     ':' => {
                         // In strict mode primitive must be followed by "," or "}" or "]"
-                        if (parser.strict) break :found;
+                        if (!parser.strict) break :found;
                     },
                     '\t', '\r', '\n', ' ', ',', ']', '}' => {
                         break :found;
@@ -222,7 +215,7 @@ pub const Parser = struct {
 
         if (tokens == null) {
             parser.pos -= 1;
-            return 0;
+            return;
         }
         const token = parser.allocToken(tokens.?) catch {
             parser.pos = start;
@@ -231,7 +224,6 @@ pub const Parser = struct {
         token.fill(.PRIMITIVE, start, parser.pos);
         token.parent = parser.toksuper;
         parser.pos -= 1;
-        return 0;
     }
 
     /// Fills next token with JSON string.

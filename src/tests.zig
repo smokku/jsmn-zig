@@ -38,7 +38,7 @@ fn parse(json: []const u8, status: Status, comptime numtok: usize, comptime resu
             },
             Type.STRING, Type.PRIMITIVE => {
                 const value = json[@intCast(usize, tk.start)..@intCast(usize, tk.end)];
-                try testing.expectEqualSlices(u8, res[1], value);
+                try testing.expectFmt(res[1], "{s}", .{value});
                 if (typ == Type.STRING)
                     try testing.expectEqual(@as(usize, res[2]), tk.size);
             },
@@ -63,14 +63,14 @@ test "for a JSON objects" {
     try parse("{\"a\", 0}", Error.INVAL, 3, .{}, true);
     try parse("{\"a\": {2}}", Error.INVAL, 3, .{}, true);
     try parse("{\"a\": {2: 3}}", Error.INVAL, 3, .{}, true);
+    try parse("{\"a\": {\"a\": 2 3}}", Error.INVAL, 5, .{}, true);
     // FIXME:
-    // try parse("{\"a\": {\"a\": 2 3}}", Error.INVAL, 5, .{}, true);
-    //try parse("{\"a\"}", Error.INVAL, 2);
-    //try parse("{\"a\": 1, \"b\"}", Error.INVAL, 4);
-    //try parse("{\"a\",\"b\":1}", Error.INVAL, 4);
-    //try parse("{\"a\":1,}", Error.INVAL, 4);
-    //try parse("{\"a\":\"b\":\"c\"}", Error.INVAL, 4);
-    //try parse("{,}", Error.INVAL, 4);
+    //try parse("{\"a\"}", Error.INVAL, 2, .{}, true);
+    //try parse("{\"a\": 1, \"b\"}", Error.INVAL, 4, .{}, true);
+    //try parse("{\"a\",\"b\":1}", Error.INVAL, 4, .{}, true);
+    //try parse("{\"a\":1,}", Error.INVAL, 4, .{}, true);
+    //try parse("{\"a\":\"b\":\"c\"}", Error.INVAL, 4, .{}, true);
+    //try parse("{,}", Error.INVAL, 4, .{}, true);
 }
 
 test "for a JSON arrays" {
@@ -279,12 +279,12 @@ test "test tokens count estimation" {
 
 test "for non-strict mode" {
     var js: []const u8 = "a: 0garbage";
-    // try parse(js, 2, 2, .{ .{ Type.PRIMITIVE, "a" }, .{ Type.PRIMITIVE, "0garbage" } }, false);
+    try parse(js, 2, 2, .{ .{ Type.PRIMITIVE, "a" }, .{ Type.PRIMITIVE, "0garbage" } }, false);
 
     js = "Day : 26\nMonth : Sep\n\nYear: 12";
-    // try parse(js, 6, 6, .{ .{ Type.PRIMITIVE, "Day" }, .{ Type.PRIMITIVE, "26" }, .{ Type.PRIMITIVE, "Month" }, .{ Type.PRIMITIVE, "Sep" }, .{ Type.PRIMITIVE, "Year" }, .{ Type.PRIMITIVE, "12" } }, false);
+    try parse(js, 6, 6, .{ .{ Type.PRIMITIVE, "Day" }, .{ Type.PRIMITIVE, "26" }, .{ Type.PRIMITIVE, "Month" }, .{ Type.PRIMITIVE, "Sep" }, .{ Type.PRIMITIVE, "Year" }, .{ Type.PRIMITIVE, "12" } }, false);
 
-    // nested {s don't cause a parse error. */
+    // nested {s don't cause a parse error.
     js = "\"key {1\": 1234";
     try parse(js, 2, 2, .{ .{ Type.STRING, "key {1", 1 }, .{ Type.PRIMITIVE, "1234" } }, false);
 }
