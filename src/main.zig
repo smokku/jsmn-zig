@@ -302,17 +302,19 @@ pub const Parser = struct {
 };
 
 test "example" {
-    var t: [128]Token = undefined;
-    var p: Parser = undefined;
+    var parser: Parser = undefined;
     const json =
         \\{ "name" : "Jack", "age" : 27 }
     ;
 
-    p.init();
-    const r1 = try p.parse(json, null);
-    try testing.expectEqual(r1, 5);
+    // count tokens needed to parse
+    parser.init();
+    const count = try parser.parse(json, null);
+    try testing.expectEqual(count, 5);
 
-    p.init();
-    const r2 = try p.parse(json, &t);
+    // and parse to tokens
+    var tokens: [5]Token = undefined;
+    parser.init();
+    const r2 = try parser.parse(json, &tokens);
     try testing.expectEqual(r2, 5);
 }

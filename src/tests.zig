@@ -4,11 +4,10 @@ const testing = std.testing;
 const jsmn = @import("main.zig");
 const Parser = jsmn.Parser;
 const Error = jsmn.Error;
-const Status = Error!usize;
 const Token = jsmn.Token;
 const Type = jsmn.Type;
 
-fn parse(json: []const u8, status: Status, comptime numtok: usize, comptime result: anytype, strict: bool) anyerror!void {
+fn parse(json: []const u8, status: Error!usize, comptime numtok: usize, comptime result: anytype, strict: bool) anyerror!void {
     var tokens: [numtok]Token = undefined;
     var p: Parser = undefined;
 
@@ -106,175 +105,116 @@ test "test string JSON data types" {
 }
 
 test "test partial JSON string parsing" {
-    //   int r;
-    //   unsigned long i;
-    //   jsmn_parser p;
-    //   jsmntok_t tok[5];
-    //   const char *js = "{\"x\": \"va\\\\ue\", \"y\": \"value y\"}";
+    const js = "{\"x\": \"va\\\\ue\", \"y\": \"value y\"}";
 
-    //   jsmn_init(&p);
-    //   for (i = 1; i <= strlen(js); i++) {
-    //     r = jsmn_parse(&p, js, i, tok, sizeof(tok) / sizeof(tok[0], .{}, false);
-    //     if (i == strlen(js)) {
-    //       try r == 5);
-    //       try tokeq(js, tok, 5, Type.OBJECT, -1, -1, 2, Type.STRING, "x", 1,
-    //                   Type.STRING, "va\\\\ue", 0, Type.STRING, "y", 1, Type.STRING,
-    //                   "value y", 0, .{}, false);
-    //     } else {
-    //       try r == Error.PART);
-    //     }
-    //   }
+    comptime var i = 1;
+    inline while (i <= js.len) : (i += 1) {
+        if (i != js.len) {
+            try parse(js[0..i], Error.PART, 5, .{}, false);
+        } else {
+            try parse(js[0..i], 5, 5, .{ .{ Type.OBJECT, -1, -1, 2 }, .{ Type.STRING, "x", 1 }, .{ Type.STRING, "va\\\\ue", 0 }, .{ Type.STRING, "y", 1 }, .{ Type.STRING, "value y", 0 } }, false);
+        }
+    }
 }
 
 test "test partial array reading" {
-    //   int r;
-    //   unsigned long i;
-    //   jsmn_parser p;
-    //   jsmntok_t tok[10];
-    //   const char *js = "[ 1, true, [123, \"hello\"]]";
+    const js = "[ 1, true, [123, \"hello\"]]";
 
-    //   jsmn_init(&p);
-    //   for (i = 1; i <= strlen(js); i++) {
-    //     r = jsmn_parse(&p, js, i, tok, sizeof(tok) / sizeof(tok[0], .{}, true);
-    //     if (i == strlen(js)) {
-    //       try r == 6);
-    //       try tokeq(js, tok, 6, Type.ARRAY, -1, -1, 3, Type.PRIMITIVE, "1",
-    //                   Type.PRIMITIVE, "true", Type.ARRAY, -1, -1, 2, Type.PRIMITIVE,
-    //                   "123", Type.STRING, "hello", 0, .{}, true);
-    //     } else {
-    //       try r == Error.PART);
-    //     }
-    //   }
+    comptime var i = 1;
+    inline while (i <= js.len) : (i += 1) {
+        if (i != js.len) {
+            try parse(js[0..i], Error.PART, 6, .{}, false);
+        } else {
+            try parse(js[0..i], 6, 6, .{ .{ Type.ARRAY, -1, -1, 3 }, .{ Type.PRIMITIVE, "1" }, .{ Type.PRIMITIVE, "true" }, .{ Type.ARRAY, -1, -1, 2 }, .{ Type.PRIMITIVE, "123" }, .{ Type.STRING, "hello", 0 } }, false);
+        }
+    }
 }
 
 test "test array reading with a smaller number of tokens" {
-    //   int i;
-    //   int r;
-    //   jsmn_parser p;
-    //   jsmntok_t toksmall[10], toklarge[10];
-    //   const char *js;
+    const js = "  [ 1, true, [123, \"hello\"]]";
 
-    //   js = "  [ 1, true, [123, \"hello\"]]";
-
-    //   for (i = 0; i < 6; i++) {
-    //     jsmn_init(&p);
-    //     memset(toksmall, 0, sizeof(toksmall, .{}, false);
-    //     memset(toklarge, 0, sizeof(toklarge, .{}, false);
-    //     r = jsmn_parse(&p, js, strlen(js), toksmall, i);
-    //     try r == Error.NOMEM);
-
-    //     memcpy(toklarge, toksmall, sizeof(toksmall, .{}, false);
-
-    //     r = jsmn_parse(&p, js, strlen(js), toklarge, 10);
-    //     try r >= 0);
-    //     try tokeq(js, toklarge, 4, Type.ARRAY, -1, -1, 3, Type.PRIMITIVE, "1",
-    //                 Type.PRIMITIVE, "true", Type.ARRAY, -1, -1, 2, Type.PRIMITIVE,
-    //                 "123", Type.STRING, "hello", 0, .{}, false);
-    //   }
+    comptime var i = 0;
+    inline while (i < 10) : (i += 1) {
+        if (i < 6) {
+            try parse(js, Error.NOMEM, i, .{}, false);
+        } else {
+            try parse(js, 6, i, .{ .{ Type.ARRAY, -1, -1, 3 }, .{ Type.PRIMITIVE, "1" }, .{ Type.PRIMITIVE, "true" }, .{ Type.ARRAY, -1, -1, 2 }, .{ Type.PRIMITIVE, "123" }, .{ Type.STRING, "hello", 0 } }, false);
+        }
+    }
 }
 
 test "test unquoted keys (like in JavaScript)" {
-    //   int r;
-    //   jsmn_parser p;
-    //   jsmntok_t tok[10];
-    //   const char *js;
+    const js = "key1: \"value\"\nkey2 : 123";
 
-    //   jsmn_init(&p);
-    //   js = "key1: \"value\"\nkey2 : 123";
-
-    //   r = jsmn_parse(&p, js, strlen(js), tok, 10);
-    //   try r >= 0);
-    //   try tokeq(js, tok, 4, Type.PRIMITIVE, "key1", Type.STRING, "value", 0,
-    //               Type.PRIMITIVE, "key2", Type.PRIMITIVE, "123", .{}, false);
+    try parse(js, 4, 4, .{ .{ Type.PRIMITIVE, "key1" }, .{ Type.STRING, "value", 0 }, .{ Type.PRIMITIVE, "key2" }, .{ Type.PRIMITIVE, "123" } }, false);
 }
 
 test "test issue #22" {
-    //   int r;
-    //   jsmn_parser p;
-    //   jsmntok_t tokens[128];
-    //   const char *js;
-
-    //   js =
-    //       "{ \"height\":10, \"layers\":[ { \"data\":[6,6], \"height\":10, "
-    //       "\"name\":\"Calque de Tile 1\", \"opacity\":1, \"type\":\"tilelayer\", "
-    //       "\"visible\":true, \"width\":10, \"x\":0, \"y\":0 }], "
-    //       "\"orientation\":\"orthogonal\", \"properties\": { }, \"tileheight\":32, "
-    //       "\"tilesets\":[ { \"firstgid\":1, \"image\":\"..\\/images\\/tiles.png\", "
-    //       "\"imageheight\":64, \"imagewidth\":160, \"margin\":0, "
-    //       "\"name\":\"Tiles\", "
-    //       "\"properties\":{}, \"spacing\":0, \"tileheight\":32, \"tilewidth\":32 "
-    //       "}], "
-    //       "\"tilewidth\":32, \"version\":1, \"width\":10 }";
-    //   jsmn_init(&p);
-    //   r = jsmn_parse(&p, js, strlen(js), tokens, 128);
-    //   try r >= 0);
+    const js =
+        \\{ "height":10, "layers":[ { "data":[6,6], "height":10,
+        \\ "name":"Calque de Tile 1", "opacity":1, "type":"tilelayer",
+        \\ "visible":true, "width":10, "x":0, "y":0 }],
+        \\ "orientation":"orthogonal", "properties": { }, "tileheight":32,
+        \\ "tilesets":[ { "firstgid":1, "image":"..\\/images\\/tiles.png",
+        \\ "imageheight":64, "imagewidth":160, "margin":0,
+        \\ "name":"Tiles",
+        \\ "properties":{}, "spacing":0, "tileheight":32, "tilewidth":32
+        \\ }],
+        \\ "tilewidth":32, "version":1, "width":10 }
+    ;
+    try parse(js, 61, 128, .{}, false);
 }
 
 test "test issue #27" {
-    //   const char *js =
-    //       "{ \"name\" : \"Jack\", \"age\" : 27 } { \"name\" : \"Anna\", ";
-    //   try parse(js, Error.PART, 8, .{}, false);
-}
+    const js =
+        "{ \"name\" : \"Jack\", \"age\" : 27 } { \"name\" : \"Anna\", ";
 
-test "test strings that are not null-terminated" {
-    //   const char *js;
-    //   int r;
-    //   jsmn_parser p;
-    //   jsmntok_t tokens[10];
-
-    //   js = "{\"a\": 0}garbage";
-
-    //   jsmn_init(&p);
-    //   r = jsmn_parse(&p, js, 8, tokens, 10);
-    //   try r == 3);
-    //   try tokeq(js, tokens, 3, Type.OBJECT, -1, -1, 1, Type.STRING, "a", 1,
-    //               Type.PRIMITIVE, "0", .{}, false);
+    try parse(js, Error.PART, 8, .{}, false);
 }
 
 test "test tokens count estimation" {
-    //   jsmn_parser p;
-    //   const char *js;
+    var p: Parser = undefined;
+    var js: []const u8 = undefined;
 
-    //   js = "{}";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 1);
+    js = "{}";
+    p.init();
+    try parse(js, 1, 10, .{}, false);
 
-    //   js = "[]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 1);
+    js = "[]";
+    p.init();
+    try parse(js, 1, 10, .{}, false);
 
-    //   js = "[[]]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 2);
+    js = "[[]]";
+    p.init();
+    try parse(js, 2, 10, .{}, false);
 
-    //   js = "[[], []]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 3);
+    js = "[[], []]";
+    p.init();
+    try parse(js, 3, 10, .{}, false);
 
-    //   js = "[[], []]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 3);
+    js = "[[], []]";
+    p.init();
+    try parse(js, 3, 10, .{}, false);
 
-    //   js = "[[], [[]], [[], []]]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 7);
+    js = "[[], [[]], [[], []]]";
+    p.init();
+    try parse(js, 7, 10, .{}, false);
 
-    //   js = "[\"a\", [[], []]]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 5);
+    js = "[\"a\", [[], []]]";
+    p.init();
+    try parse(js, 5, 10, .{}, false);
 
-    //   js = "[[], \"[], [[]]\", [[]]]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 5);
+    js = "[[], \"[], [[]]\", [[]]]";
+    p.init();
+    try parse(js, 5, 10, .{}, false);
 
-    //   js = "[1, 2, 3]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 4);
+    js = "[1, 2, 3]";
+    p.init();
+    try parse(js, 4, 10, .{}, false);
 
-    //   js = "[1, 2, [3, \"a\"], null]";
-    //   jsmn_init(&p);
-    //   try jsmn_parse(&p, js, strlen(js), NULL, 0) == 7);
-
+    js = "[1, 2, [3, \"a\"], null]";
+    p.init();
+    try parse(js, 7, 10, .{}, false);
 }
 
 test "for non-strict mode" {
