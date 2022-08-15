@@ -15,32 +15,32 @@ fn parse(json: []const u8, status: Status, comptime numtok: usize, comptime resu
     p.init();
     p.strict = strict;
     const r = p.parse(json, &tokens);
-    try testing.expectEqual(r, status);
+    try testing.expectEqual(status, r);
 
-    if (r) |count| {
-        try testing.expectEqual(count, try status);
+    if (status) |count| {
+        try testing.expectEqual(count, try r);
     } else |err| {
-        try testing.expectError(err, status);
+        try testing.expectError(err, r catch |e| e);
     }
 
     inline for (result) |res, index| {
         const tk = &tokens[index];
         const typ = res[0];
-        try testing.expectEqual(tk.typ, typ);
+        try testing.expectEqual(typ, tk.typ);
         switch (typ) {
             Type.UNDEFINED => unreachable,
             Type.OBJECT, Type.ARRAY => {
                 if (res[1] != -1 and res[2] != -1) {
-                    try testing.expectEqual(tk.start, res[1]);
-                    try testing.expectEqual(tk.end, res[2]);
+                    try testing.expectEqual(@as(isize, res[1]), tk.start);
+                    try testing.expectEqual(@as(isize, res[2]), tk.end);
                 }
-                try testing.expectEqual(tk.size, res[3]);
+                try testing.expectEqual(@as(usize, res[3]), tk.size);
             },
             Type.STRING, Type.PRIMITIVE => {
                 const value = json[@intCast(usize, tk.start)..@intCast(usize, tk.end)];
-                try testing.expectEqualSlices(u8, value, res[1]);
+                try testing.expectEqualSlices(u8, res[1], value);
                 if (typ == Type.STRING)
-                    try testing.expectEqual(tk.size, res[2]);
+                    try testing.expectEqual(@as(usize, res[2]), tk.size);
             },
         }
     }
