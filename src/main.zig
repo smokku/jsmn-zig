@@ -67,35 +67,31 @@ pub const Parser = struct {
             switch (c) {
                 '{', '[' => {
                     count += 1;
-                    if (tokens == null) {
-                        continue;
-                    }
-                    const token = try parser.allocToken(tokens.?);
-                    if (parser.toksuper != -1) {
-                        const t = &tokens.?[@intCast(usize, parser.toksuper)];
-                        if (parser.strict) {
-                            // In strict mode an object or array can't become a key
-                            if (t.typ == .OBJECT) {
-                                return Error.INVAL;
+                    if (tokens) |toks| {
+                        const token = try parser.allocToken(toks);
+                        if (parser.toksuper != -1) {
+                            const t = &toks[@intCast(usize, parser.toksuper)];
+                            if (parser.strict) {
+                                // In strict mode an object or array can't become a key
+                                if (t.typ == .OBJECT) {
+                                    return Error.INVAL;
+                                }
                             }
-                        }
 
-                        t.size += 1;
-                        token.parent = parser.toksuper;
+                            t.size += 1;
+                            token.parent = parser.toksuper;
+                        }
+                        token.typ = if (c == '{') .OBJECT else .ARRAY;
+                        token.start = parser.pos;
+                        parser.toksuper = parser.toknext - 1;
                     }
-                    token.typ = if (c == '{') .OBJECT else .ARRAY;
-                    token.start = parser.pos;
-                    parser.toksuper = parser.toknext - 1;
                 },
-                '}', ']' => {
-                    if (tokens == null) {
-                        continue;
-                    }
+                '}', ']' => if (tokens) |toks| {
                     const typ: Type = if (c == '}') .OBJECT else .ARRAY;
                     if (parser.toknext < 1) {
                         return Error.INVAL;
                     }
-                    var token = &tokens.?[@intCast(usize, parser.toknext - 1)];
+                    var token = &toks[@intCast(usize, parser.toknext - 1)];
                     while (true) {
                         if (token.start != -1 and token.end == -1) {
                             if (token.typ != typ) {
@@ -111,14 +107,11 @@ pub const Parser = struct {
                             }
                             break;
                         }
-                        token = &tokens.?[@intCast(usize, token.parent)];
+                        token = &toks[@intCast(usize, token.parent)];
                     }
                 },
                 '"' => {
-                    const r = try parser.parseString(js, tokens);
-                    if (r < 0) {
-                        return r;
-                    }
+                    try parser.parseString(js, tokens);
                     count += 1;
                     if (parser.toksuper != -1 and tokens != null) {
                         tokens.?[@intCast(usize, parser.toksuper)].size += 1;
@@ -129,11 +122,13 @@ pub const Parser = struct {
                     parser.toksuper = parser.toknext - 1;
                 },
                 ',' => {
-                    if (tokens != null and parser.toksuper != -1 and
-                        tokens.?[@intCast(usize, parser.toksuper)].typ != .ARRAY and
-                        tokens.?[@intCast(usize, parser.toksuper)].typ != .OBJECT)
-                    {
-                        parser.toksuper = tokens.?[@intCast(usize, parser.toksuper)].parent;
+                    if (tokens != null and parser.toksuper != -1) {
+                        const typ = tokens.?[@intCast(usize, parser.toksuper)].typ;
+                        if (typ != .ARRAY and
+                            typ != .OBJECT)
+                        {
+                            parser.toksuper = tokens.?[@intCast(usize, parser.toksuper)].parent;
+                        }
                     }
                 },
                 '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 't', 'f', 'n' => {
@@ -170,11 +165,11 @@ pub const Parser = struct {
             }
         }
 
-        if (tokens != null) {
+        if (tokens) |toks| {
             var i = parser.toknext - 1;
             while (i >= 0) : (i -= 1) {
                 // Unmatched opened object or array
-                if (tokens.?[@intCast(usize, i)].start != -1 and tokens.?[@intCast(usize, i)].end == -1) {
+                if (toks[@intCast(usize, i)].start != -1 and toks[@intCast(usize, i)].end == -1) {
                     return Error.PART;
                 }
             }
@@ -201,7 +196,8 @@ pub const Parser = struct {
                         // quiet pass
                     },
                 }
-                if (js[@intCast(usize, parser.pos)] < 32 or js[@intCast(usize, parser.pos)] >= 127) {
+                const char = js[@intCast(usize, parser.pos)];
+                if (char < 32 or char >= 127) {
                     parser.pos = start;
                     return Error.INVAL;
                 }
@@ -227,7 +223,7 @@ pub const Parser = struct {
     }
 
     /// Fills next token with JSON string.
-    fn parseString(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!usize {
+    fn parseString(parser: *Parser, js: []const u8, tokens: ?[]Token) Error!void {
         const start = parser.pos;
 
         // Skip starting quote
@@ -238,16 +234,15 @@ pub const Parser = struct {
 
             // Quote: end of string
             if (c == '\"') {
-                if (tokens == null) {
-                    return 0;
+                if (tokens) |toks| {
+                    const token = parser.allocToken(toks) catch {
+                        parser.pos = start;
+                        return Error.NOMEM;
+                    };
+                    token.fill(.STRING, start + 1, parser.pos);
+                    token.parent = parser.toksuper;
                 }
-                const token = parser.allocToken(tokens.?) catch {
-                    parser.pos = start;
-                    return Error.NOMEM;
-                };
-                token.fill(.STRING, start + 1, parser.pos);
-                token.parent = parser.toksuper;
-                return 0;
+                return;
             }
 
             // Backslash: Quoted symbol expected
@@ -261,10 +256,11 @@ pub const Parser = struct {
                         parser.pos += 1;
                         var i: usize = 0;
                         while (i < 4 and parser.pos < js.len and js[@intCast(usize, parser.pos)] != 0) : (i += 1) {
+                            const char = js[@intCast(usize, parser.pos)];
                             // If it isn't a hex character we have an error
-                            if (!((js[@intCast(usize, parser.pos)] >= 48 and js[@intCast(usize, parser.pos)] <= 57) or // 0-9
-                                (js[@intCast(usize, parser.pos)] >= 65 and js[@intCast(usize, parser.pos)] <= 70) or // A-F
-                                (js[@intCast(usize, parser.pos)] >= 97 and js[@intCast(usize, parser.pos)] <= 102)))
+                            if (!((char >= 48 and char <= 57) or // 0-9
+                                (char >= 65 and char <= 70) or // A-F
+                                (char >= 97 and char <= 102)))
                             { // a-f
                                 parser.pos = start;
                                 return Error.INVAL;
