@@ -30,6 +30,11 @@ other projects.
 - incremental single-pass parsing
 - library code is covered with unit-tests
 
+### Serializer
+
+- one function
+- uses provided allocator, return string ([]u8)
+
 ## Design
 
 The rudimentary jsmn object is a **token**. Let's consider a JSON string:
@@ -75,6 +80,8 @@ var tokens: [128]Token = undefined;
 
 parser.init();
 const r = try parser.parse(json, &tokens);
+
+const s = try serialize(&t, js, std.testing.allocator);
 ```
 
 ## API

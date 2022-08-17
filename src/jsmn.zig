@@ -314,3 +314,85 @@ test "example" {
     const r2 = try parser.parse(json, &tokens);
     try testing.expectEqual(r2, 5);
 }
+
+fn serializeToken(i: usize, tokens: []const Token, bytes: []const u8, writer: anytype) anyerror!usize {
+    const token = &tokens[i];
+    var num = token.size;
+    var next = i + 1;
+
+    switch (token.typ) {
+        .UNDEFINED => unreachable,
+        .PRIMITIVE => {
+            _ = try writer.write(bytes[@intCast(usize, token.start)..@intCast(usize, token.end)]);
+        },
+        .STRING => {
+            _ = try writer.write("\"");
+            _ = try writer.write(bytes[@intCast(usize, token.start)..@intCast(usize, token.end)]);
+            _ = try writer.write("\"");
+
+            while (num > 0 and next < tokens.len) : (num -= 1) {
+                _ = try writer.write(":");
+                next = try serializeToken(next, tokens, bytes, writer);
+            }
+        },
+        .ARRAY => {
+            _ = try writer.write("[");
+            while (num > 0 and next < tokens.len) : (num -= 1) {
+                if (num != token.size)
+                    _ = try writer.write(",");
+                next = try serializeToken(next, tokens, bytes, writer);
+            }
+            _ = try writer.write("]");
+        },
+        .OBJECT => {
+            _ = try writer.write("{");
+            while (num > 0 and next < tokens.len) : (num -= 1) {
+                if (num != token.size)
+                    _ = try writer.write(",");
+                next = try serializeToken(next, tokens, bytes, writer);
+            }
+            _ = try writer.write("}");
+        },
+    }
+
+    return next;
+}
+
+/// Writes JSON representation of tokens.
+/// caller owns the returned memory
+pub fn serialize(tokens: []Token, bytes: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    var out = std.ArrayList(u8).init(allocator);
+    defer out.deinit();
+
+    const writer = out.writer();
+
+    var index: usize = 0;
+    while (index < tokens.len) {
+        index = try serializeToken(index, tokens, bytes, writer);
+    }
+    return out.toOwnedSlice();
+}
+
+test "serialize" {
+    var p: Parser = undefined;
+    p.init();
+    var t: [10]Token = undefined;
+    const js =
+        \\{
+        \\  "one": "uno",
+        \\  "two":     2,
+        \\  "three": [   false,    1,"2"]
+        \\}
+    ;
+    const r = try p.parse(js, &t);
+    try testing.expectEqual(@as(usize, 10), r);
+
+    // now actually serialize
+    const s = try serialize(&t, js, testing.allocator);
+    defer testing.allocator.destroy(s.ptr);
+
+    const expected =
+        \\{"one":"uno","two":2,"three":[false,1,"2"]}
+    ;
+    try testing.expectFmt(expected, "{s}", .{s});
+}
