@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const jsmn = @import("main.zig");
+const jsmn = @import("jsmn.zig");
 const Parser = jsmn.Parser;
 const Error = jsmn.Error;
 const Token = jsmn.Token;

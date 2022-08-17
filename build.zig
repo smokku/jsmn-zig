@@ -5,11 +5,11 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const lib = b.addStaticLibrary("jsmn", "src/main.zig");
+    const lib = b.addStaticLibrary("jsmn", "src/jsmn.zig");
     lib.setBuildMode(mode);
     lib.install();
 
-    const main_tests = b.addTest("src/main.zig");
+    const main_tests = b.addTest("src/jsmn.zig");
     main_tests.setBuildMode(mode);
     const test_tests = b.addTest("src/tests.zig");
     test_tests.setBuildMode(mode);
