@@ -6,12 +6,12 @@ const testing = std.testing;
 ///  * Array
 ///  * String
 ///  * Other primitive: number, boolean (true/false) or null
-pub const Type = enum(u8) {
-    UNDEFINED = 0,
-    OBJECT = 1 << 0,
-    ARRAY = 1 << 1,
-    STRING = 1 << 2,
-    PRIMITIVE = 1 << 3,
+pub const Type = enum {
+    UNDEFINED,
+    OBJECT,
+    ARRAY,
+    STRING,
+    PRIMITIVE,
 };
 
 pub const Error = error{
