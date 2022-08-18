@@ -53,6 +53,7 @@ pub const Parser = struct {
     toksuper: isize,
 
     pub fn init(parser: *Parser) void {
+        parser.strict = false;
         parser.pos = 0;
         parser.toknext = 0;
         parser.toksuper = -1;
